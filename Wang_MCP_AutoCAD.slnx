@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Wang_MCP_AutoCAD/Wang_MCP_AutoCAD.csproj" />
+  <Project Path="Wang_MCP_AutoCAD.Loader/Wang_MCP_AutoCAD.Loader.csproj" />
+  <Project Path="Wang_MCP_AutoCAD.Tests/Wang_MCP_AutoCAD.Tests.csproj" />
+</Solution>

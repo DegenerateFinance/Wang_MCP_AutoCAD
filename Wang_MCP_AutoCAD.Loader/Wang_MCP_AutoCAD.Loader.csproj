@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <!-- AutoCAD's CLR loads NETLOAD'ed assemblies into AssemblyLoadContext.Default,
+         which refuses to load a second assembly with the same simple name (regardless
+         of version) and can never unload one. The Loader is meant to change rarely,
+         so it still needs the timestamp-per-build trick in deploy.ps1 when it does. -->
+    <Deterministic>false</Deterministic>
+    <AssemblyVersion>1.0.*</AssemblyVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="accoremgd">
+      <HintPath>..\Wang_MCP_AutoCAD\AutoCAD_DLL\accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AcCui">
+      <HintPath>..\Wang_MCP_AutoCAD\AutoCAD_DLL\AcCui.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Acdbmgd">
+      <HintPath>..\Wang_MCP_AutoCAD\AutoCAD_DLL\acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Acmgd">
+      <HintPath>..\Wang_MCP_AutoCAD\AutoCAD_DLL\acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="DeployToShared" AfterTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\deploy.ps1&quot; -Config $(Configuration) -Project Loader" />
+  </Target>
+
+</Project>

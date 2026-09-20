@@ -1,0 +1,7 @@
+.vs/
+bin/
+obj/
+*.user
+
+# Autodesk's proprietary managed DLLs (copied from the local AutoCAD install) - not redistributable
+AutoCAD_DLL/

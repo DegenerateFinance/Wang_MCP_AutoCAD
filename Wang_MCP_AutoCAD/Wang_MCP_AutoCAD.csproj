@@ -1,0 +1,55 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <!-- AutoCAD's CLR resolves NETLOAD'ed assemblies by identity (name+version), not
+         file path, so a fresh AssemblyVersion is required every build to force a real
+         reload instead of silently reusing the previously loaded assembly. -->
+    <Deterministic>false</Deterministic>
+    <AssemblyVersion>1.0.*</AssemblyVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="DLL\**" />
+    <EmbeddedResource Remove="DLL\**" />
+    <None Remove="DLL\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="accoremgd">
+      <HintPath>AutoCAD_DLL\accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AcCui">
+      <HintPath>AutoCAD_DLL\AcCui.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Acdbmgd">
+      <HintPath>AutoCAD_DLL\acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Acmgd">
+      <HintPath>AutoCAD_DLL\acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Deliberately no PackageReference in this project. The HTTP listener is
+         System.Net.HttpListener and JSON is System.Text.Json, both in-box in
+         net8.0. Two reasons to keep it at zero:
+         (1) deploy.ps1 copies only this assembly to the deploy folder, and
+             PluginLoadContext loads it from a byte stream with no path to probe
+             from, so a dependency DLL would resolve in neither deployment mode;
+         (2) PluginLoadContext.Load matches Default-context assemblies by simple
+             name alone, so any package AutoCAD also happens to load (Newtonsoft
+             being the classic) would silently bind to Autodesk's version. -->
+  </ItemGroup>
+
+  <Target Name="DeployToShared" AfterTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\deploy.ps1&quot; -Config $(Configuration) -Project Plugin" />
+  </Target>
+
+</Project>
