@@ -2,14 +2,24 @@ param(
     [string]$Config = "Debug",
     [Parameter(Mandatory = $true)]
     [ValidateSet("Loader", "Plugin")]
-    [string]$Project
+    [string]$Project,
+    # Passed by the csproj from $(WangMcpDeployDir), which comes from the gitignored
+    # deploy.local.props. Kept out of source control so no machine-specific path is
+    # committed - see deploy.local.props.example.
+    [string]$TargetDir
 )
 
-# Deploy folder: $env:WANG_MCP_DEPLOY_DIR if set, else %LOCALAPPDATA%\Wang_MCP_AutoCAD\deploy.
-# Wang_MCP_AutoCAD.Loader's MCPRELOAD file picker uses the same rule.
-$TargetDir = $env:WANG_MCP_DEPLOY_DIR
+# Precedence: -TargetDir (deploy.local.props) -> $env:WANG_MCP_DEPLOY_DIR -> fallback.
+# The env var wins over nothing here but is the easier lever on the AutoCAD machine,
+# where there is no source tree to hold a props file.
+if ([string]::IsNullOrWhiteSpace($TargetDir)) {
+    $TargetDir = $env:WANG_MCP_DEPLOY_DIR
+}
 if ([string]::IsNullOrWhiteSpace($TargetDir)) {
     $TargetDir = Join-Path $env:LOCALAPPDATA "Wang_MCP_AutoCAD\deploy"
+    # Warn rather than fail: a fresh clone must still build. But say so loudly, because
+    # a silent fallback is how you end up NETLOADing a stale DLL from the other folder.
+    Write-Warning "No deploy.local.props and no WANG_MCP_DEPLOY_DIR; deploying to $TargetDir instead of the AutoCAD host's shared folder. Copy deploy.local.props.example to deploy.local.props to fix this."
 }
 New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
 

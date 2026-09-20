@@ -33,13 +33,40 @@ public class Loader : IExtensionApplication
 
     public void Terminate() => Unload();
 
-    // Must stay in sync with the $TargetDir rule in deploy.ps1.
+    /// <summary>
+    /// Where MCPRELOAD's file picker opens. There is no source tree on the AutoCAD machine,
+    /// so the build's deploy.local.props is unreachable from here; the fallbacks below are
+    /// what stand in for it.
+    ///
+    /// Preferring this assembly's own folder is the important one: the Loader is deployed
+    /// alongside the plugin, so "next to me" is by construction the folder the build just
+    /// wrote to. That makes the common case self-configuring and, more to the point, stops
+    /// the picker opening on a stale copy in some other folder.
+    /// </summary>
     private static string GetDeployDirectory()
     {
         string? envDir = Environment.GetEnvironmentVariable("WANG_MCP_DEPLOY_DIR");
         if (!string.IsNullOrWhiteSpace(envDir))
         {
             return envDir;
+        }
+
+        try
+        {
+            string ownPath = Assembly.GetExecutingAssembly().Location;
+            if (!string.IsNullOrWhiteSpace(ownPath))
+            {
+                string? ownDir = Path.GetDirectoryName(ownPath);
+                if (!string.IsNullOrWhiteSpace(ownDir) && Directory.Exists(ownDir))
+                {
+                    return ownDir;
+                }
+            }
+        }
+        catch (System.Exception)
+        {
+            // Location can be empty or throw for assemblies with no backing file. Fall
+            // through rather than taking down MCPRELOAD over a directory default.
         }
 
         return Path.Combine(

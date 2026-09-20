@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -10,14 +11,19 @@ namespace Wang_MCP_AutoCAD.Tests;
 /// <summary>
 /// Drives the real <see cref="McpHttpServer"/> over a real loopback socket with a fake
 /// document gateway. Nothing here touches AutoCAD — which is the point: the Origin guard,
-/// the HTTP routing and the shutdown join are the parts most likely to break, and they are
-/// all verifiable without opening a drawing.
+/// the HTTP routing and the shutdown are the parts most likely to break, and they are all
+/// verifiable without opening a drawing.
+///
+/// Production awaits RunAcceptLoopAsync directly on AutoCAD's document thread inside
+/// MCPSTART — there is no such command here, so the fixture runs the loop on a Task.Run'd
+/// pool thread instead, purely as a test harness detail.
 /// </summary>
 [Collection(LogGlobalCollection.Name)]
 public class McpHttpServerTests : IDisposable
 {
     private readonly McpServerOptions _options;
     private readonly McpHttpServer _server;
+    private readonly Task _loopTask;
     private readonly HttpClient _client = new();
     private readonly int _port;
 
@@ -33,12 +39,21 @@ public class McpHttpServerTests : IDisposable
         _server = new McpHttpServer(dispatcher, _options, _port);
 
         Assert.True(_server.TryStart(out string error), error);
+        _loopTask = Task.Run(() => _server.RunAcceptLoopAsync(CancellationToken.None));
     }
 
     public void Dispose()
     {
         _server.Stop();
-        _server.Join(2000);
+        try
+        {
+            _loopTask.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (AggregateException)
+        {
+            // A cancelled/faulted loop on the way out is not this fixture's concern.
+        }
+
         _client.Dispose();
     }
 
@@ -213,6 +228,11 @@ public class McpHttpServerTests : IDisposable
 /// <summary>
 /// Separated from the fixture above because it must own the whole lifecycle: this is the
 /// regression test for the constraint that makes MCPRELOAD work at all.
+///
+/// Production awaits RunAcceptLoopAsync directly inside MCPSTART, so Stop() (called from
+/// MCPSTOP or Terminate — a separate command invocation) is what has to reliably unblock
+/// that await and free the port; nothing here joins a background thread the way the old
+/// Task.Run-based design did, because there no longer is one owned by McpHttpServer itself.
 /// </summary>
 [Collection(LogGlobalCollection.Name)]
 public class McpHttpServerShutdownTests
@@ -235,13 +255,14 @@ public class McpHttpServerShutdownTests
     }
 
     [Fact]
-    public void Stop_JoinsWithinTheTimeoutAndFreesThePort()
+    public async Task Stop_UnblocksTheAcceptLoopAndFreesThePort()
     {
-        // The load-bearing test. A listener thread that outlives Stop() pins the collectible
+        // The load-bearing test. An accept loop that outlives Stop() pins the collectible
         // AssemblyLoadContext, and every MCPRELOAD then leaks a context plus the port.
         int port = FreePort();
         McpHttpServer server = Build(port);
         Assert.True(server.TryStart(out string error), error);
+        Task loopTask = Task.Run(() => server.RunAcceptLoopAsync(CancellationToken.None));
 
         using (HttpClient client = new())
         {
@@ -252,14 +273,12 @@ public class McpHttpServerShutdownTests
         }
 
         server.Stop();
-
-        Assert.True(server.Join(5000), "The listener thread did not exit; the ALC would leak.");
+        Assert.True(loopTask.Wait(5000), "The accept loop did not exit; the ALC would leak.");
 
         // The port must be genuinely released, not merely unreferenced.
         McpHttpServer rebound = Build(port);
         Assert.True(rebound.TryStart(out string rebindError), $"Port {port} was not released: {rebindError}");
         rebound.Stop();
-        rebound.Join(5000);
     }
 
     [Fact]
@@ -271,16 +290,49 @@ public class McpHttpServerShutdownTests
 
         server.Stop();
         server.Stop();
-
-        Assert.True(server.Join(5000));
     }
 
     [Fact]
-    public void Join_BeforeStart_ReturnsTrue()
+    public void Stop_BeforeStart_DoesNotThrow()
     {
         McpHttpServer server = Build(FreePort());
 
-        Assert.True(server.Join(10));
+        server.Stop();
+    }
+
+    [Fact]
+    public async Task Stop_CalledFromAnotherThreadWhileLoopIsAwaited_DoesNotDeadlock()
+    {
+        // Mirrors production: RunAcceptLoopAsync is awaited on one logical thread (AutoCAD's
+        // document thread, standing in for MCPSTART's own call), and Stop() is invoked from
+        // elsewhere (MCPSTOP's own separate command invocation) while that await is still
+        // pending. This is the regression guard for that interaction.
+        int port = FreePort();
+        McpHttpServer server = Build(port);
+        Assert.True(server.TryStart(out string error), error);
+        Task loopTask = Task.Run(() => server.RunAcceptLoopAsync(CancellationToken.None));
+
+        using (HttpClient client = new())
+        {
+            client.Send(new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{port}/mcp")
+            {
+                Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"ping"}""", Encoding.UTF8, "application/json"),
+            });
+        }
+
+        Stopwatch sw = Stopwatch.StartNew();
+
+        Thread caller = new(() => server.Stop())
+        {
+            IsBackground = true,
+        };
+        caller.Start();
+
+        bool returned = caller.Join(10000);
+        sw.Stop();
+
+        Assert.True(returned, $"Stop() deadlocked when called synchronously (elapsed_ms={sw.ElapsedMilliseconds}).");
+        Assert.True(loopTask.Wait(5000), "The accept loop did not exit within its own timeout.");
     }
 
     [Fact]
@@ -301,7 +353,6 @@ public class McpHttpServerShutdownTests
         finally
         {
             first.Stop();
-            first.Join(5000);
         }
     }
 }

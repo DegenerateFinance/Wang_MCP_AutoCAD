@@ -14,16 +14,17 @@ namespace Wang_MCP_AutoCAD;
 /// Keep exactly one IExtensionApplication in this assembly: Loader.LoadPlugin instantiates
 /// *every* one it finds, so a second would start a second listener on every reload.
 ///
-/// The listener does not auto-start. Run MCPSTART to bind the port — and note that in the
-/// dev loop the commands below are not auto-registered by AutoCAD (that scan only happens
-/// for NETLOAD'ed assemblies), so they are reached through the Loader's MCPINVOKE.
+/// The listener does not auto-start. Run MCPSTART to bind the port and serve — and note
+/// that in the dev loop the commands below are not auto-registered by AutoCAD (that scan
+/// only happens for NETLOAD'ed assemblies), so they are reached through the Loader's
+/// MCPINVOKE.
 /// </summary>
 public sealed class McpExtension : IExtensionApplication
 {
     /// <summary>
     /// State is static because MCPINVOKE builds a *fresh* instance of a command's declaring
     /// type via Activator.CreateInstance. An instance field set by MCPSTART would therefore
-    /// be invisible to Terminate() on the real instance, and the listener thread would
+    /// be invisible to Terminate() on the real instance, and a listener still running would
     /// survive the reload — pinning the collectible AssemblyLoadContext forever.
     ///
     /// These statics live in that same collectible context and die with it, so they do not
@@ -32,7 +33,6 @@ public sealed class McpExtension : IExtensionApplication
     private static readonly object Gate = new();
 
     private static McpHttpServer? _server;
-    private static AcadDocumentGateway? _gateway;
     private static readonly McpServerOptions Options = new();
 
     public void Initialize()
@@ -48,20 +48,34 @@ public sealed class McpExtension : IExtensionApplication
     public void Terminate()
     {
         Stopwatch sw = Stopwatch.StartNew();
-        bool stopped = StopServer(out string message);
+        bool stopped = RequestStop(out string message);
         sw.Stop();
 
         Log.Info($"op=extension/terminate stopped={stopped} detail=\"{message}\" elapsed_ms={sw.ElapsedMilliseconds}");
     }
 
+    /// <summary>
+    /// Binds the port and then serves for as long as AutoCAD keeps this command "in
+    /// progress" — the accept loop is awaited here directly, not handed off to a background
+    /// thread, so this call does not return until MCPSTOP (or Terminate on unload) stops it.
+    /// If a request handler lets an exception escape unexpectedly, it propagates out of this
+    /// await too: AutoCAD reports the command as failed rather than the listener dying
+    /// silently on a thread nobody is watching.
+    ///
+    /// async void is deliberate, not an oversight: AutoCAD's command executor invokes
+    /// [CommandMethod]s without awaiting a returned Task, so returning Task here would just
+    /// mean the executor treats the command as already finished — async void is the only
+    /// shape that keeps the command "in progress" for the loop's whole lifetime.
+    /// </summary>
     [CommandMethod("MCPSTART")]
-    public void StartCommand()
+    public async void StartCommand()
     {
         Editor? ed = Application.DocumentManager.MdiActiveDocument?.Editor;
 
+        McpHttpServer server;
         lock (Gate)
         {
-            if (_server is not null && _server.IsRunning)
+            if (_server is not null)
             {
                 ed?.WriteMessage($"\nWang_MCP_AutoCAD: already listening on {_server.McpUrl}.\n");
                 return;
@@ -74,7 +88,7 @@ public sealed class McpExtension : IExtensionApplication
             DrawingTools.RegisterAll(registry);
 
             McpDispatcher dispatcher = new(registry, gateway, Options);
-            McpHttpServer server = new(dispatcher, Options);
+            server = new McpHttpServer(dispatcher, Options);
 
             if (!server.TryStart(out string error))
             {
@@ -82,12 +96,32 @@ public sealed class McpExtension : IExtensionApplication
                 return;
             }
 
-            _gateway = gateway;
             _server = server;
+        }
 
-            ed?.WriteMessage(
-                $"\nWang_MCP_AutoCAD listening on {server.McpUrl} ({registry.Count} tools).\n"
-                + "Run MCPSTOP to stop it.\n");
+        ed?.WriteMessage($"\nWang_MCP_AutoCAD listening on {server.McpUrl}.\nRun MCPSTOP to stop it.\n");
+
+        try
+        {
+            // This is the listener's entire lifetime: MCPSTART stays "in progress" until
+            // MCPSTOP (a separate command invocation) or Terminate() calls server.Stop(),
+            // which closes the HttpListener and unblocks the awaited GetContextAsync() inside.
+            await server.RunAcceptLoopAsync(CancellationToken.None);
+        }
+        catch (System.Exception ex)
+        {
+            Log.Error("op=extension/listener outcome=unhandled", ex);
+            throw;
+        }
+        finally
+        {
+            lock (Gate)
+            {
+                if (ReferenceEquals(_server, server))
+                {
+                    _server = null;
+                }
+            }
         }
     }
 
@@ -95,7 +129,7 @@ public sealed class McpExtension : IExtensionApplication
     public void StopCommand()
     {
         Editor? ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-        StopServer(out string message);
+        RequestStop(out string message);
         ed?.WriteMessage($"\nWang_MCP_AutoCAD: {message}\n");
     }
 
@@ -108,24 +142,27 @@ public sealed class McpExtension : IExtensionApplication
             return;
         }
 
+        McpHttpServer? server;
         lock (Gate)
         {
-            if (_server is null || !_server.IsRunning)
-            {
-                ed.WriteMessage($"\nWang_MCP_AutoCAD: not listening. Run MCPSTART to bind {Options.McpUrl}.\n");
-                return;
-            }
-
-            ServerStats stats = _server.Snapshot();
-            ed.WriteMessage(
-                $"\nWang_MCP_AutoCAD listening on {_server.McpUrl}"
-                + $"\n  pid           {Environment.ProcessId}"
-                + $"\n  requests      {stats.Requests}"
-                + $"\n  failures      {stats.Failures}"
-                + $"\n  avg ms/req    {stats.Ms_RequestAverage}"
-                + $"\n  uptime ms     {stats.Ms_Uptime}"
-                + $"\n  log           {Log.Path} ({Log.MinimumLevel})\n");
+            server = _server;
         }
+
+        if (server is null)
+        {
+            ed.WriteMessage($"\nWang_MCP_AutoCAD: not listening. Run MCPSTART to bind {Options.McpUrl}.\n");
+            return;
+        }
+
+        ServerStats stats = server.Snapshot();
+        ed.WriteMessage(
+            $"\nWang_MCP_AutoCAD listening on {server.McpUrl}"
+            + $"\n  pid           {Environment.ProcessId}"
+            + $"\n  requests      {stats.Requests}"
+            + $"\n  failures      {stats.Failures}"
+            + $"\n  avg ms/req    {stats.Ms_RequestAverage}"
+            + $"\n  uptime ms     {stats.Ms_Uptime}"
+            + $"\n  log           {Log.Path} ({Log.MinimumLevel})\n");
     }
 
     private static ServerStats SnapshotStats()
@@ -135,46 +172,25 @@ public sealed class McpExtension : IExtensionApplication
     }
 
     /// <summary>
-    /// Deterministic shutdown. The ordering is load-bearing, not stylistic: a listener
-    /// thread still executing pins the collectible AssemblyLoadContext, and this method runs
-    /// on the document thread — the very thread a pending tool call is waiting for.
+    /// Signals the running listener to stop and returns immediately — it does not wait for
+    /// StartCommand's awaited RunAcceptLoopAsync to actually return. There is nothing to join
+    /// here any more: StartCommand's own async method is the loop's lifetime, so once
+    /// server.Stop() closes the listener, that await unwinds on its own and clears _server
+    /// itself (see the finally block in StartCommand).
     /// </summary>
-    private static bool StopServer(out string message)
+    private static bool RequestStop(out string message)
     {
         lock (Gate)
         {
             McpHttpServer? server = _server;
-            AcadDocumentGateway? gateway = _gateway;
-
             if (server is null)
             {
                 message = "not listening.";
                 return true;
             }
 
-            // 0. Release anyone blocked on the document thread FIRST. We are ON that thread,
-            //    so a waiter can never be satisfied while we are here; joining before
-            //    cancelling would stall for the full document-call timeout every reload.
-            gateway?.AbortPending();
-
-            // 1./2. Close() is what throws out of a thread parked in GetContext().
             server.Stop();
-
-            // 3. Bounded join. Overrunning it means the context leaks — say so out loud.
-            int ms_Join = Options.Sec_ListenerShutdown * 1000;
-            bool joined = server.Join(ms_Join);
-
-            _server = null;
-            _gateway = null;
-
-            if (!joined)
-            {
-                Log.Error($"op=listener/join outcome=timeout ms_join={ms_Join} note=alc_will_leak");
-                message = $"listener did not stop within {Options.Sec_ListenerShutdown}s; the reload will leak a load context.";
-                return false;
-            }
-
-            message = "stopped.";
+            message = "stopping.";
             return true;
         }
     }

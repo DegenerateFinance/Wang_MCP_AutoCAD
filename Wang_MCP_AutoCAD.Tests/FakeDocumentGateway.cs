@@ -15,13 +15,7 @@ internal sealed class FakeDocumentGateway : IDocumentGateway
 
     public int RunCount { get; private set; }
 
-    public bool AbortPendingCalled { get; private set; }
-
-    public bool TryRun(
-        Func<ToolResult> work,
-        int ms_Timeout,
-        out ToolResult? outcome,
-        out string failureReason)
+    public bool TryRun(Func<ToolResult> work, out ToolResult? outcome, out string failureReason)
     {
         RunCount++;
 
@@ -36,6 +30,4 @@ internal sealed class FakeDocumentGateway : IDocumentGateway
         outcome = work();
         return true;
     }
-
-    public void AbortPending() => AbortPendingCalled = true;
 }

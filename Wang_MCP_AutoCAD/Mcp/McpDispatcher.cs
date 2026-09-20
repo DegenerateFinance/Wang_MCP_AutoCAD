@@ -224,7 +224,6 @@ public sealed class McpDispatcher
 
         if (!_gateway.TryRun(
                 work: () => tool.Handler(args),
-                ms_Timeout: _options.Ms_DocumentCallTimeout,
                 outcome: out ToolResult? outcome,
                 failureReason: out string failureReason))
         {

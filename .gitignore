@@ -1,7 +1,29 @@
-.vs/
-bin/
-obj/
+# Local machine configuration — holds the deploy path, which is specific to this
+# machine and the AutoCAD host it shares a folder with. Copy deploy.local.props.example
+# to deploy.local.props and edit it. Never commit the real one.
+deploy.local.props
+
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
 *.user
+*.suo
+
+# IDE
+.vs/
+.idea/
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+coverage*.xml
+coverage*.json
+*.coverage
+
+# NuGet
+*.nupkg
+packages/
 
 # Autodesk's proprietary managed DLLs (copied from the local AutoCAD install) - not redistributable
 AutoCAD_DLL/

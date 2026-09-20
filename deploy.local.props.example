@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    Template for deploy.local.props. Copy this file to deploy.local.props (same folder)
+    and set the path below; the real file is gitignored so machine-specific paths stay
+    out of the repository.
+
+        copy deploy.local.props.example deploy.local.props
+
+    WangMcpDeployDir is where `dotnet build` drops Wang_MCP_AutoCAD.dll (and the Loader,
+    when that project is built). It should be the folder AutoCAD loads from — typically a
+    folder shared with the machine that has AutoCAD installed, so a build here is
+    immediately NETLOAD-able there.
+
+    If this file is absent, deploy.ps1 falls back to
+    %LOCALAPPDATA%\Wang_MCP_AutoCAD\deploy and prints a warning. The build still
+    succeeds; the output just does not reach the AutoCAD host.
+
+    The WANG_MCP_DEPLOY_DIR environment variable overrides this value, which is the
+    easier lever on the AutoCAD machine itself, where there is no source tree.
+  -->
+  <PropertyGroup>
+    <WangMcpDeployDir>\\SERVER\Share\ACAD_DLL</WangMcpDeployDir>
+  </PropertyGroup>
+
+</Project>

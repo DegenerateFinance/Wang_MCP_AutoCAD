@@ -48,8 +48,13 @@
              being the classic) would silently bind to Autodesk's version. -->
   </ItemGroup>
 
+  <!-- WangMcpDeployDir comes from the gitignored deploy.local.props, imported by
+       Directory.Build.props. Absent, deploy.ps1 warns and falls back to LOCALAPPDATA. -->
   <Target Name="DeployToShared" AfterTargets="Build">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\deploy.ps1&quot; -Config $(Configuration) -Project Plugin" />
+    <PropertyGroup>
+      <_WangMcpDeployDirArg Condition="'$(WangMcpDeployDir)' != ''">-TargetDir "$(WangMcpDeployDir)"</_WangMcpDeployDirArg>
+    </PropertyGroup>
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\deploy.ps1&quot; -Config $(Configuration) -Project Plugin $(_WangMcpDeployDirArg)" />
   </Target>
 
 </Project>

@@ -28,7 +28,7 @@ public sealed class McpHttpServer
     private readonly int _port;
 
     private HttpListener? _listener;
-    private Thread? _thread;
+    private CancellationTokenSource? _cts;
     private volatile bool _stopping;
     private readonly Stopwatch _sw_Uptime = new();
 
@@ -56,9 +56,9 @@ public sealed class McpHttpServer
     public bool IsRunning => _listener is not null && !_stopping;
 
     /// <summary>
-    /// Binds the fixed port and starts the accept thread. Returns false rather than throwing:
-    /// per the port decision there is no scan and no fallback, so a taken port is reported
-    /// to the user and the server stays down.
+    /// Binds the fixed port. Returns false rather than throwing: per the port decision there
+    /// is no scan and no fallback, so a taken port is reported to the user and the server
+    /// stays down. Does not start accepting connections — call RunAcceptLoopAsync for that.
     /// </summary>
     public bool TryStart(out string error)
     {
@@ -98,24 +98,30 @@ public sealed class McpHttpServer
         _stopping = false;
         _sw_Uptime.Restart();
 
-        _thread = new Thread(Listen)
-        {
-            IsBackground = true,
-            Name = "mcp-listener",
-        };
-        _thread.Start();
+        _cts = new CancellationTokenSource();
 
         Log.Info($"op=listener/start port={_port} url={McpUrl} outcome=listening");
         return true;
     }
 
     /// <summary>
-    /// Unblocks the accept thread. Close() rather than Stop() is what throws out of a thread
-    /// parked in GetContext() and releases the port.
+    /// Unblocks the accept loop. Close() rather than Stop() is what throws out of a pending
+    /// GetContextAsync() and releases the port. Call this to make a RunAcceptLoopAsync call
+    /// elsewhere return — typically from MCPSTOP, which runs as its own separate command
+    /// invocation while MCPSTART's is still awaiting the loop.
     /// </summary>
     public void Stop()
     {
         _stopping = true;
+
+        try
+        {
+            _cts?.Cancel();
+        }
+        catch (System.Exception ex)
+        {
+            Log.Warn("op=listener/cancel outcome=threw", ex);
+        }
 
         HttpListener? listener = _listener;
         if (listener is null)
@@ -131,28 +137,10 @@ public sealed class McpHttpServer
         {
             Log.Warn("op=listener/close outcome=threw", ex);
         }
-    }
 
-    /// <summary>
-    /// Joins the accept thread. Returns false on timeout — which means a thread is still
-    /// executing code in the collectible AssemblyLoadContext and that context will leak.
-    /// </summary>
-    public bool Join(int ms_Timeout)
-    {
-        Thread? thread = _thread;
-        if (thread is null)
-        {
-            return true;
-        }
-
-        bool joined = thread.Join(ms_Timeout);
-        if (joined)
-        {
-            _thread = null;
-            _listener = null;
-        }
-
-        return joined;
+        _listener = null;
+        _cts?.Dispose();
+        _cts = null;
     }
 
     public ServerStats Snapshot()
@@ -164,16 +152,29 @@ public sealed class McpHttpServer
             Ms_Uptime: _sw_Uptime.ElapsedMilliseconds);
     }
 
-    private void Listen()
+    /// <summary>
+    /// The accept loop. Requests are handled inline — awaited before the next accept — so they
+    /// stay strictly serialised.
+    ///
+    /// Call this directly from MCPSTART and await it: this IS the listener's lifetime, not a
+    /// fire-and-forget background task. It returns once Stop() (called from MCPSTOP, a
+    /// separate command invocation, or from Terminate()) closes the listener or cancels the
+    /// token; an unhandled exception here propagates out to the caller so MCPSTART itself
+    /// fails loudly rather than dying silently on a background thread.
+    ///
+    /// GetContextAsync() takes no CancellationToken: cancellation arrives as the disposed or
+    /// aborted listener that Stop()'s Close() produces. The token guards the loop itself.
+    /// </summary>
+    public async Task RunAcceptLoopAsync(CancellationToken cancellationToken)
     {
         try
         {
-            while (!_stopping)
+            while (!_stopping && !cancellationToken.IsCancellationRequested)
             {
                 HttpListenerContext context;
                 try
                 {
-                    context = _listener!.GetContext();
+                    context = await _listener!.GetContextAsync().ConfigureAwait(false);
                 }
                 catch (HttpListenerException ex)
                 {
@@ -190,18 +191,27 @@ public sealed class McpHttpServer
                 {
                     break;
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
                 catch (InvalidOperationException ex)
                 {
                     Log.Warn("op=listener/accept outcome=not_listening", ex);
                     break;
                 }
 
-                Handle(context);
+                await HandleAsync(context).ConfigureAwait(false);
             }
         }
         catch (System.Exception ex)
         {
+            // Nothing inside the loop body is expected to throw — HandleAsync catches its own
+            // failures — so anything landing here is a genuine bug. Log it, then let it
+            // propagate: MCPSTART awaits this directly, so the command fails loudly rather
+            // than the listener dying silently.
             Log.Error("op=listener/accept outcome=unhandled", ex);
+            throw;
         }
         finally
         {
@@ -214,7 +224,7 @@ public sealed class McpHttpServer
         }
     }
 
-    private void Handle(HttpListenerContext context)
+    private async Task HandleAsync(HttpListenerContext context)
     {
         Stopwatch sw = Stopwatch.StartNew();
         string method = context.Request.HttpMethod;
@@ -233,7 +243,7 @@ public sealed class McpHttpServer
             {
                 Interlocked.Increment(ref _failureCount);
                 Log.Warn($"op=http method={method} path={path} origin={origin} outcome=forbidden_origin");
-                Respond(context, 403, "text/plain; charset=utf-8", "Forbidden: non-loopback Origin.");
+                await RespondAsync(context, 403, "text/plain; charset=utf-8", "Forbidden: non-loopback Origin.").ConfigureAwait(false);
                 return;
             }
 
@@ -241,20 +251,20 @@ public sealed class McpHttpServer
             {
                 if (string.Equals(path, "/health", StringComparison.Ordinal) && method == "GET")
                 {
-                    RespondHealth(context);
+                    await RespondHealthAsync(context).ConfigureAwait(false);
                     Log.Info($"op=http method=GET path=/health status=200 elapsed_ms={sw.ElapsedMilliseconds}");
                     return;
                 }
 
                 Log.Warn($"op=http method={method} path={path} outcome=not_found");
-                Respond(context, 404, "text/plain; charset=utf-8", "Not found. The MCP endpoint is " + _options.McpPath + ".");
+                await RespondAsync(context, 404, "text/plain; charset=utf-8", "Not found. The MCP endpoint is " + _options.McpPath + ".").ConfigureAwait(false);
                 return;
             }
 
             if (method == "DELETE")
             {
                 // Session teardown. This server is stateless, so there is nothing to forget.
-                Respond(context, 204, null, null);
+                await RespondAsync(context, 204, null, null).ConfigureAwait(false);
                 Log.Info($"op=http method=DELETE path={path} status=204 elapsed_ms={sw.ElapsedMilliseconds}");
                 return;
             }
@@ -264,7 +274,7 @@ public sealed class McpHttpServer
                 // A server that offers no server-initiated SSE stream answers GET with 405;
                 // the spec sanctions exactly this.
                 context.Response.AddHeader("Allow", "POST, DELETE");
-                Respond(context, 405, "text/plain; charset=utf-8", "Method not allowed. POST a JSON-RPC request.");
+                await RespondAsync(context, 405, "text/plain; charset=utf-8", "Method not allowed. POST a JSON-RPC request.").ConfigureAwait(false);
                 Log.Warn($"op=http method={method} path={path} status=405 elapsed_ms={sw.ElapsedMilliseconds}");
                 return;
             }
@@ -272,12 +282,12 @@ public sealed class McpHttpServer
             if (context.Request.ContentLength64 > _options.Bytes_MaxRequestBody)
             {
                 Interlocked.Increment(ref _failureCount);
-                Respond(context, 413, "text/plain; charset=utf-8", "Request body too large.");
+                await RespondAsync(context, 413, "text/plain; charset=utf-8", "Request body too large.").ConfigureAwait(false);
                 Log.Warn($"op=http method=POST path={path} status=413 bytes={context.Request.ContentLength64}");
                 return;
             }
 
-            string body = ReadBody(context.Request);
+            string body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
 
             Interlocked.Increment(ref _requestCount);
 
@@ -285,11 +295,11 @@ public sealed class McpHttpServer
 
             if (result.ResponseJson is null)
             {
-                Respond(context, result.HttpStatus, null, null);
+                await RespondAsync(context, result.HttpStatus, null, null).ConfigureAwait(false);
             }
             else
             {
-                Respond(context, result.HttpStatus, "application/json; charset=utf-8", result.ResponseJson);
+                await RespondAsync(context, result.HttpStatus, "application/json; charset=utf-8", result.ResponseJson).ConfigureAwait(false);
             }
 
             sw.Stop();
@@ -316,7 +326,7 @@ public sealed class McpHttpServer
 
             try
             {
-                Respond(context, 500, "text/plain; charset=utf-8", "Internal server error.");
+                await RespondAsync(context, 500, "text/plain; charset=utf-8", "Internal server error.").ConfigureAwait(false);
             }
             catch (System.Exception nested)
             {
@@ -325,7 +335,7 @@ public sealed class McpHttpServer
         }
     }
 
-    private void RespondHealth(HttpListenerContext context)
+    private Task RespondHealthAsync(HttpListenerContext context)
     {
         ServerStats stats = Snapshot();
         JsonObject health = new()
@@ -341,17 +351,21 @@ public sealed class McpHttpServer
             ["ms_uptime"] = stats.Ms_Uptime,
         };
 
-        Respond(context, 200, "application/json; charset=utf-8", health.ToJsonString());
+        return RespondAsync(context, 200, "application/json; charset=utf-8", health.ToJsonString());
     }
 
-    private string ReadBody(HttpListenerRequest request)
+    private static async Task<string> ReadBodyAsync(HttpListenerRequest request)
     {
         Encoding encoding = request.ContentEncoding ?? Encoding.UTF8;
         using StreamReader reader = new(request.InputStream, encoding);
-        return reader.ReadToEnd();
+        return await reader.ReadToEndAsync().ConfigureAwait(false);
     }
 
-    private static void Respond(HttpListenerContext context, int status, string? contentType, string? body)
+    private static async Task RespondAsync(
+        HttpListenerContext context,
+        int status,
+        string? contentType,
+        string? body)
     {
         HttpListenerResponse response = context.Response;
         response.StatusCode = status;
@@ -370,7 +384,7 @@ public sealed class McpHttpServer
 
         byte[] bytes = Encoding.UTF8.GetBytes(body);
         response.ContentLength64 = bytes.Length;
-        response.OutputStream.Write(bytes, 0, bytes.Length);
+        await response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
         response.Close();
     }
 
