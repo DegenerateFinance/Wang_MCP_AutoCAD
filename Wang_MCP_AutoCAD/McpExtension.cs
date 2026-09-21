@@ -85,7 +85,7 @@ public sealed class McpExtension : IExtensionApplication
 
             ToolRegistry registry = new();
             registry.Add(PingTool.Create(Options, SnapshotStats));
-            DrawingTools.RegisterAll(registry);
+            AcadTools.RegisterAll(registry);
 
             McpDispatcher dispatcher = new(registry, gateway, Options);
             server = new McpHttpServer(dispatcher, Options);

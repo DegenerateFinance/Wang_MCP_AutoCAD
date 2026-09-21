@@ -37,6 +37,7 @@ internal static class DrawingTools
                 .String("layer", "Layer to draw on. Must already exist; defaults to the drawing's current layer.")
                 .Build(),
             RequiresDocument = true,
+            Group = ToolGroups.Draw,
             Handler = DrawCircle,
         };
     }
@@ -163,6 +164,7 @@ internal static class DrawingTools
                 .Integer("limit", "Maximum number of entities to return.", minimum: 1, maximum: 1000, defaultValue: 100)
                 .Build(),
             RequiresDocument = true,
+            Group = ToolGroups.Query,
             Handler = ListEntities,
         };
     }
