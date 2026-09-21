@@ -9,6 +9,12 @@ namespace Wang_MCP_AutoCAD.Mcp;
 ///
 /// Geometry read from the database is in drawing units and is NOT implicitly millimetres —
 /// hence the Du_/Mm_ naming split everywhere downstream.
+///
+/// Three quantities in this surface are DIMENSIONLESS and must pass through unconverted:
+/// scale factors, LinetypeScale, and a text WidthFactor. Two more are real measurements that
+/// are nonetheless independent of INSUNITS: LineWeight (always hundredths of a millimetre)
+/// and Transparency (an alpha byte). Running any of these five through MmToDrawingUnits is a
+/// silent bug, which is why none of them has a conversion helper here beyond the two that do.
 /// </summary>
 public static class Units
 {
@@ -73,4 +79,63 @@ public static class Units
     /// Running it through the drawing-unit factor is a classic and silent bug.
     /// </summary>
     public static double LineWeightToMm(int lineWeightEnumValue) => lineWeightEnumValue / 100.0;
+
+    // ---- Angles -------------------------------------------------------------------------
+    //
+    // The database stores angles in RADIANS. Endpoint payloads use degrees and carry the
+    // Deg_ prefix, so every angle crossing the boundary goes through one of these.
+
+    public static double DegToRad(double deg_Value) => deg_Value * Math.PI / 180.0;
+
+    public static double RadToDeg(double rad_Value) => rad_Value * 180.0 / Math.PI;
+
+    /// <summary>
+    /// Wraps an angle into [0, 360). Arc angles come back from the database in [0, 2*PI), and
+    /// reporting -0.0000001 rather than 359.9999999 is a real source of confusion for a caller
+    /// comparing what it sent with what it reads back.
+    /// </summary>
+    public static double NormalizeDeg(double deg_Value)
+    {
+        if (double.IsNaN(deg_Value) || double.IsInfinity(deg_Value))
+        {
+            return deg_Value;
+        }
+
+        double wrapped = deg_Value % 360.0;
+        if (wrapped < 0)
+        {
+            wrapped += 360.0;
+        }
+
+        return wrapped;
+    }
+
+    // ---- Area ---------------------------------------------------------------------------
+    //
+    // Area scales by the SQUARE of the linear factor. These exist as named methods precisely
+    // so no call site squares the factor by hand — applying the linear factor to an area is
+    // silent and survives casual review.
+
+    public static double DrawingUnits2ToMm2(double du2_Area, double mmPerDrawingUnit)
+        => du2_Area * mmPerDrawingUnit * mmPerDrawingUnit;
+
+    public static double Mm2ToDrawingUnits2(double mm2_Area, double mmPerDrawingUnit)
+        => mm2_Area / (mmPerDrawingUnit * mmPerDrawingUnit);
+
+    // ---- Transparency -------------------------------------------------------------------
+    //
+    // Autodesk.AutoCAD.Colors.Transparency is constructed from an ALPHA byte where 255 means
+    // fully opaque — the inverse of the "percent transparent" a user talks in. Getting this
+    // backwards makes every affected entity vanish, so it lives here with a test.
+
+    public static byte TransparencyPercentToAlpha(int percent)
+    {
+        int clamped = Math.Clamp(percent, 0, 100);
+        return (byte)Math.Round(255.0 * (100 - clamped) / 100.0, MidpointRounding.AwayFromZero);
+    }
+
+    public static int AlphaToTransparencyPercent(byte alpha)
+    {
+        return (int)Math.Round(100.0 * (255 - alpha) / 255.0, MidpointRounding.AwayFromZero);
+    }
 }

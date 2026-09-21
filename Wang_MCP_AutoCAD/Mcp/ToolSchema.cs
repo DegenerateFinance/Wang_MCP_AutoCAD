@@ -48,6 +48,226 @@ public sealed class ToolSchema
         return Add(name, "string", description, required, exclusiveMinimum: null);
     }
 
+    public ToolSchema Boolean(string name, string description, bool defaultValue)
+    {
+        _properties[name] = new JsonObject
+        {
+            ["type"] = "boolean",
+            ["description"] = description,
+            ["default"] = defaultValue,
+        };
+
+        return this;
+    }
+
+    /// <summary>
+    /// A one-of string. The allowed values go in the enum AND are restated in the description:
+    /// some clients do not surface "enum" to the model, and a value list it cannot see is a
+    /// value list it cannot obey.
+    /// </summary>
+    public ToolSchema StringEnum(
+        string name,
+        string description,
+        IReadOnlyList<string> allowed,
+        bool required = false,
+        string? defaultValue = null)
+    {
+        JsonArray enumValues = new();
+        foreach (string value in allowed)
+        {
+            enumValues.Add(value);
+        }
+
+        JsonObject property = new()
+        {
+            ["type"] = "string",
+            ["description"] = $"{description} One of: {string.Join(", ", allowed)}.",
+            ["enum"] = enumValues,
+        };
+
+        if (defaultValue is not null)
+        {
+            property["default"] = defaultValue;
+        }
+
+        _properties[name] = property;
+
+        if (required)
+        {
+            _required.Add(name);
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// A required integer with bounds. Separate from <see cref="Integer"/> because that
+    /// overload takes a default and never joins the required list.
+    /// </summary>
+    public ToolSchema RequiredInteger(string name, string description, int minimum, int maximum)
+    {
+        _properties[name] = new JsonObject
+        {
+            ["type"] = "integer",
+            ["description"] = description,
+            ["minimum"] = minimum,
+            ["maximum"] = maximum,
+        };
+
+        _required.Add(name);
+        return this;
+    }
+
+    public ToolSchema NumberInRange(
+        string name,
+        string description,
+        double minimum,
+        double maximum,
+        bool required = false)
+    {
+        JsonObject property = new()
+        {
+            ["type"] = "number",
+            ["description"] = description,
+            ["minimum"] = minimum,
+            ["maximum"] = maximum,
+        };
+
+        _properties[name] = property;
+
+        if (required)
+        {
+            _required.Add(name);
+        }
+
+        return this;
+    }
+
+    public ToolSchema StringArray(
+        string name,
+        string description,
+        int minItems,
+        int maxItems,
+        bool required = false)
+    {
+        JsonObject property = new()
+        {
+            ["type"] = "array",
+            ["description"] = description,
+            ["minItems"] = minItems,
+            ["maxItems"] = maxItems,
+            ["items"] = new JsonObject { ["type"] = "string" },
+        };
+
+        _properties[name] = property;
+
+        if (required)
+        {
+            _required.Add(name);
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// A point as three sibling number properties, {prefix}_x / _y / _z. Flat rather than a
+    /// nested object to match how the existing tools already read their points.
+    /// </summary>
+    public ToolSchema PointMm(string prefix, string description, bool required = false)
+    {
+        Number($"{prefix}_x", $"{description} X ordinate, in millimetres.", required);
+        Number($"{prefix}_y", $"{description} Y ordinate, in millimetres.", required);
+
+        _properties[$"{prefix}_z"] = new JsonObject
+        {
+            ["type"] = "number",
+            ["description"] = $"{description} Z ordinate, in millimetres. Defaults to 0.",
+            ["default"] = 0,
+        };
+
+        return this;
+    }
+
+    /// <summary>
+    /// A polyline vertex list: an array of {mm_x, mm_y, bulge?} objects. No mm_z — a
+    /// lightweight polyline is 2D and takes its Z from the polyline's elevation.
+    /// </summary>
+    public ToolSchema VertexArrayMm(
+        string name,
+        string description,
+        int minItems,
+        int maxItems,
+        bool required = false)
+    {
+        JsonObject itemSchema = new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["mm_x"] = new JsonObject
+                {
+                    ["type"] = "number",
+                    ["description"] = "Vertex X ordinate, in millimetres.",
+                },
+                ["mm_y"] = new JsonObject
+                {
+                    ["type"] = "number",
+                    ["description"] = "Vertex Y ordinate, in millimetres.",
+                },
+                ["bulge"] = new JsonObject
+                {
+                    ["type"] = "number",
+                    ["description"] = "Arc bulge for the segment that follows: tan(angle / 4). "
+                                    + "0 is a straight segment, 1 a semicircle; positive bulges "
+                                    + "curve counter-clockwise. Dimensionless. Defaults to 0.",
+                    ["default"] = 0,
+                },
+            },
+            ["required"] = new JsonArray { "mm_x", "mm_y" },
+            ["additionalProperties"] = false,
+        };
+
+        JsonObject property = new()
+        {
+            ["type"] = "array",
+            ["description"] = description,
+            ["minItems"] = minItems,
+            ["maxItems"] = maxItems,
+            ["items"] = itemSchema,
+        };
+
+        _properties[name] = property;
+
+        if (required)
+        {
+            _required.Add(name);
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// A free-form string-to-string map, for block attribute tag/value pairs.
+    /// </summary>
+    public ToolSchema StringMap(string name, string description, bool required = false)
+    {
+        JsonObject property = new()
+        {
+            ["type"] = "object",
+            ["description"] = description,
+            ["additionalProperties"] = new JsonObject { ["type"] = "string" },
+        };
+
+        _properties[name] = property;
+
+        if (required)
+        {
+            _required.Add(name);
+        }
+
+        return this;
+    }
+
     public JsonObject Build()
     {
         return new JsonObject
