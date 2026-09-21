@@ -13,6 +13,15 @@ public sealed class McpTool
 
     public required string Description { get; init; }
 
+    /// <summary>
+    /// The functional group this tool belongs to, used to narrow what a session advertises.
+    ///
+    /// Tool-selection accuracy falls off as the list grows, and every tool's schema sits in
+    /// the context window on every request — so a session doing layout work should not have
+    /// to carry the block-redefinition tools. <see cref="ToolGroups"/> holds the names.
+    /// </summary>
+    public string Group { get; init; } = ToolGroups.Core;
+
     /// <summary>The JSON Schema for the tool's arguments. Must be an object schema.</summary>
     public required JsonObject InputSchema { get; init; }
 
