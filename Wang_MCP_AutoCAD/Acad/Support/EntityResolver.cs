@@ -112,6 +112,35 @@ internal static class EntityResolver
         return true;
     }
 
+    /// <summary>
+    /// Rejects a handle list naming the same entity twice. Without this, an in-place transform
+    /// applies twice to that entity — a move goes twice as far — a copy makes two clones, and
+    /// a block definition gets the entity twice.
+    /// </summary>
+    public static bool TryRejectDuplicates(IReadOnlyList<Entity> entities, out string error)
+    {
+        error = "";
+        HashSet<ObjectId> seen = new();
+        List<string> duplicates = new();
+
+        foreach (Entity entity in entities)
+        {
+            if (!seen.Add(entity.ObjectId))
+            {
+                duplicates.Add(entity.Handle.ToString());
+            }
+        }
+
+        if (duplicates.Count == 0)
+        {
+            return true;
+        }
+
+        error = $"These handles appear more than once, so nothing was changed: "
+              + $"{string.Join(", ", duplicates)}. Pass each handle once.";
+        return false;
+    }
+
     private static bool TryOpenEntity(
         Transaction tr,
         Database db,

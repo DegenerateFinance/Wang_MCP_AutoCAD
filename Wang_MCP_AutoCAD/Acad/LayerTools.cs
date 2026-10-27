@@ -41,6 +41,7 @@ internal static class LayerTools
                 .Boolean("include_unused", "Include layers no entity is currently on.", true)
                 .Build(),
             RequiresDocument = true,
+            IsReadOnly = true,
             Group = ToolGroups.Layers,
             Handler = ListLayers,
         };

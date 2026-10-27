@@ -15,10 +15,18 @@ namespace Wang_MCP_AutoCAD.Mcp;
 public interface IDocumentGateway
 {
     /// <summary>
-    /// Runs <paramref name="work"/> with the active document locked. Returns false when there
-    /// is no active document; <paramref name="failureReason"/> is then a client-facing
-    /// sentence. Must never throw: an escape here would surface on the accept loop and abort
-    /// the request loop, taking MCPSTART's command down with it.
+    /// Runs <paramref name="work"/> with the target document locked. <paramref name="drawing"/>
+    /// names it (see <see cref="DrawingSelector.TrySelect"/>); null means the active document.
+    /// With <paramref name="requireActiveDrawing"/>, a named drawing that is not the active one
+    /// is refused without running anything. Returns false when no document matches or it is
+    /// refused; <paramref name="failureReason"/> is then a client-facing sentence. Must never
+    /// throw: an escape here would surface on the accept loop and abort the request loop,
+    /// taking MCPSTART's command down with it.
     /// </summary>
-    bool TryRun(Func<ToolResult> work, out ToolResult? outcome, out string failureReason);
+    bool TryRun(
+        string? drawing,
+        bool requireActiveDrawing,
+        Func<ToolResult> work,
+        out ToolResult? outcome,
+        out string failureReason);
 }

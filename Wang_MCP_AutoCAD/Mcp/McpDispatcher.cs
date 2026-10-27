@@ -156,7 +156,12 @@ public sealed class McpDispatcher
                 "Drives a running AutoCAD 2026 session in-process. All lengths in arguments and "
                 + "responses are millimetres (mm_ prefix); the server converts to the drawing's "
                 + "own units using its INSUNITS setting and echoes mm_per_drawing_unit so the "
-                + "conversion is auditable.",
+                + "conversion is auditable. Several drawings may be open. Tools that change the "
+                + "drawing edit ONLY the active drawing; on them, \"drawing\" is a guard that "
+                + "refuses the call if it names any other drawing. Read-only tools accept "
+                + "\"drawing\" to read any open drawing. Every response names the drawing it "
+                + "acted on, and handles are only unique within one drawing, so call "
+                + "acad_list_drawings and pass \"drawing\" whenever more than one is open.",
         };
     }
 
@@ -222,7 +227,14 @@ public sealed class McpDispatcher
             }
         }
 
+        if (!DrawingSelector.TryReadArgument(args, out string? drawing, out string drawingError))
+        {
+            return ToolResult.Fail(drawingError);
+        }
+
         if (!_gateway.TryRun(
+                drawing: drawing,
+                requireActiveDrawing: !tool.IsReadOnly,
                 work: () => tool.Handler(args),
                 outcome: out ToolResult? outcome,
                 failureReason: out string failureReason))

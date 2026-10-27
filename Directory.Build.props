@@ -6,7 +6,7 @@
     deploy.local.props.example alongside it and edit that copy.
 
     This file is imported automatically by every project in the tree, so both the plugin
-    and the Loader pick up WangMcpDeployDir without repeating the import.
+    and AcadHotLoader pick up WangMcpDeployDir without repeating the import.
   -->
   <Import Project="$(MSBuildThisFileDirectory)deploy.local.props"
           Condition="Exists('$(MSBuildThisFileDirectory)deploy.local.props')" />

@@ -38,6 +38,13 @@ public sealed class TransformRequest
     /// <summary>Scale only.</summary>
     public double Factor { get; private init; }
 
+    /// <summary>
+    /// True when the matrix flips handedness: a mirror, or a scale by a negative factor (which
+    /// in 3D is a point inversion). Either one makes text read backwards, because TransformBy
+    /// does not consult MIRRTEXT the way the MIRROR command does.
+    /// </summary>
+    public bool IsReflection => Kind == TransformKind.Mirror || (Kind == TransformKind.Scale && Factor < 0);
+
     /// <summary>The argument names each mode consumes, for building precise error messages.</summary>
     public static IReadOnlyList<string> ModeNames { get; } = new[] { "move", "rotate", "scale", "mirror" };
 

@@ -14,9 +14,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="DLL\**" />
-    <EmbeddedResource Remove="DLL\**" />
-    <None Remove="DLL\**" />
+    <Compile Remove="AutoCAD_DLL\**" />
+    <EmbeddedResource Remove="AutoCAD_DLL\**" />
+    <None Remove="AutoCAD_DLL\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,13 +36,14 @@
       <HintPath>AutoCAD_DLL\acmgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
-
+	 
     <!-- Deliberately no PackageReference in this project. The HTTP listener is
          System.Net.HttpListener and JSON is System.Text.Json, both in-box in
          net8.0. Two reasons to keep it at zero:
          (1) deploy.ps1 copies only this assembly to the deploy folder, and
-             PluginLoadContext loads it from a byte stream with no path to probe
-             from, so a dependency DLL would resolve in neither deployment mode;
+             AcadHotLoader's PluginLoadContext loads it from a byte stream with no
+             path to probe from, so a dependency DLL would resolve in neither
+             deployment mode;
          (2) PluginLoadContext.Load matches Default-context assemblies by simple
              name alone, so any package AutoCAD also happens to load (Newtonsoft
              being the classic) would silently bind to Autodesk's version. -->

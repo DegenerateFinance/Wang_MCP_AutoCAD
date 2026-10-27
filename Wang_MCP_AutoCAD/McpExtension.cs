@@ -9,20 +9,22 @@ namespace Wang_MCP_AutoCAD;
 
 /// <summary>
 /// The plugin entry point. AutoCAD calls Initialize() on NETLOAD; in the dev loop
-/// Loader.cs reflects for IExtensionApplication implementations and calls it instead.
+/// AcadHotLoader's HOTLOAD reflects for IExtensionApplication implementations and calls it
+/// instead.
 ///
-/// Keep exactly one IExtensionApplication in this assembly: Loader.LoadPlugin instantiates
-/// *every* one it finds, so a second would start a second listener on every reload.
+/// Keep exactly one IExtensionApplication in this assembly: HotLoader.LoadPlugin
+/// instantiates *every* one it finds, so a second would start a second listener on every
+/// reload.
 ///
 /// The listener does not auto-start. Run MCPSTART to bind the port and serve — and note
 /// that in the dev loop the commands below are not auto-registered by AutoCAD (that scan
-/// only happens for NETLOAD'ed assemblies), so they are reached through the Loader's
-/// MCPINVOKE.
+/// only happens for NETLOAD'ed assemblies), so they are reached through AcadHotLoader's
+/// HOTRUN.
 /// </summary>
 public sealed class McpExtension : IExtensionApplication
 {
     /// <summary>
-    /// State is static because MCPINVOKE builds a *fresh* instance of a command's declaring
+    /// State is static because HOTRUN builds a *fresh* instance of a command's declaring
     /// type via Activator.CreateInstance. An instance field set by MCPSTART would therefore
     /// be invisible to Terminate() on the real instance, and a listener still running would
     /// survive the reload — pinning the collectible AssemblyLoadContext forever.

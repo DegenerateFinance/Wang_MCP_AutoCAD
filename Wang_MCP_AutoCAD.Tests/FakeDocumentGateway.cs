@@ -15,9 +15,22 @@ internal sealed class FakeDocumentGateway : IDocumentGateway
 
     public int RunCount { get; private set; }
 
-    public bool TryRun(Func<ToolResult> work, out ToolResult? outcome, out string failureReason)
+    /// <summary>The "drawing" the dispatcher passed on the most recent call; null means active.</summary>
+    public string? LastDrawing { get; private set; }
+
+    /// <summary>Whether the most recent call demanded the active drawing (i.e. was a write).</summary>
+    public bool LastRequireActiveDrawing { get; private set; }
+
+    public bool TryRun(
+        string? drawing,
+        bool requireActiveDrawing,
+        Func<ToolResult> work,
+        out ToolResult? outcome,
+        out string failureReason)
     {
         RunCount++;
+        LastDrawing = drawing;
+        LastRequireActiveDrawing = requireActiveDrawing;
 
         if (ShouldFail)
         {

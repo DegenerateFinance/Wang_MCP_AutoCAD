@@ -44,6 +44,7 @@ internal static class PropertyTools
                     defaultValue: EntityDescriber.DetailFull)
                 .Build(),
             RequiresDocument = true,
+            IsReadOnly = true,
             Group = ToolGroups.Query,
             Handler = GetProperties,
         };

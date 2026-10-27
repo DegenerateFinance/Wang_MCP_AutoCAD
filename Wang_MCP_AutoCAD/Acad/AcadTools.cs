@@ -12,8 +12,12 @@ internal static class AcadTools
 {
     public static void RegisterAll(ToolRegistry registry)
     {
+        DocumentTools.RegisterAll(registry);
         LayerTools.RegisterAll(registry);
         DrawingTools.RegisterAll(registry);
+        TextTools.RegisterAll(registry);
         PropertyTools.RegisterAll(registry);
+        TransformTools.RegisterAll(registry);
+        BlockTools.RegisterAll(registry);
     }
 }

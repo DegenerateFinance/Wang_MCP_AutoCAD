@@ -32,6 +32,18 @@ public sealed class McpTool
     /// </summary>
     public bool RequiresDocument { get; init; } = true;
 
+    /// <summary>
+    /// True when the handler only reads the drawing. Only read-only tools may target a
+    /// drawing that is not the active one: verified live, a write from inside MCPSTART to a
+    /// non-active drawing fails with eWrongDatabase, so writes are confined to the active
+    /// drawing and refused up front otherwise.
+    ///
+    /// Defaults to false on purpose — a new tool that forgets to set this gets the stricter
+    /// rule, which fails loudly, rather than the looser one, which would fail deep inside a
+    /// transaction.
+    /// </summary>
+    public bool IsReadOnly { get; init; } = false;
+
     public required Func<ToolArgs, ToolResult> Handler { get; init; }
 
     /// <summary>Renders the entry as it appears in a tools/list response.</summary>

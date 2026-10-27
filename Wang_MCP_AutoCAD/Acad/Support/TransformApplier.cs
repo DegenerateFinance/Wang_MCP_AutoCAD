@@ -52,33 +52,62 @@ internal static class TransformApplier
     }
 
     /// <summary>
-    /// Appends transformed copies of the entities to <paramref name="destination"/> and
-    /// returns the new handles.
+    /// Clones each entity into the same owner it already lives in, transforms the clone, and
+    /// returns the new handles in the same order as <paramref name="entities"/>.
     ///
-    /// GetTransformedCopy rather than Database.DeepCloneObjects: DeepCloneObjects is for
-    /// cross-database or cross-owner cloning and hands back an IdMapping to interpret, while
-    /// for same-space copies of a known list this is one call with nothing to unpack. It
-    /// handles a BlockReference correctly too, since the clone shares the definition's id.
+    /// Database.DeepCloneObjects rather than Entity.GetTransformedCopy, reversing the earlier
+    /// plan: GetTransformedCopy is a shallow Clone(), which does not carry an entity's owned
+    /// sub-objects. The case that matters is an attributed BlockReference — its
+    /// AttributeReferences are owned objects, and a shallow copy arrives without them. Deep
+    /// cloning is what AutoCAD's own COPY does, and it also carries extension dictionaries.
+    /// The price is the IdMapping, and that DeepCloneObjects wants one owner per call, hence
+    /// the grouping.
+    ///
+    /// Every entity's owner must be a BlockTableRecord; the caller checks that first.
     /// </summary>
     public static List<string> ApplyAsCopy(
         Transaction tr,
-        BlockTableRecord destination,
+        Database db,
         IReadOnlyList<Entity> entities,
         Matrix3d matrix)
     {
-        List<string> newHandles = new(entities.Count);
+        string[] newHandles = new string[entities.Count];
+        Dictionary<ObjectId, List<int>> indicesByOwner = new();
 
-        foreach (Entity entity in entities)
+        for (int i = 0; i < entities.Count; i++)
         {
-            Entity clone = entity.GetTransformedCopy(matrix);
+            ObjectId ownerId = entities[i].OwnerId;
+            if (!indicesByOwner.TryGetValue(ownerId, out List<int>? indices))
+            {
+                indices = new List<int>();
+                indicesByOwner[ownerId] = indices;
+            }
 
-            destination.AppendEntity(clone);
-            tr.AddNewlyCreatedDBObject(clone, true);
-
-            newHandles.Add(clone.Handle.ToString());
+            indices.Add(i);
         }
 
-        return newHandles;
+        foreach (KeyValuePair<ObjectId, List<int>> group in indicesByOwner)
+        {
+            ObjectIdCollection sourceIds = new();
+            foreach (int index in group.Value)
+            {
+                sourceIds.Add(entities[index].ObjectId);
+            }
+
+            IdMapping mapping = new();
+            db.DeepCloneObjects(sourceIds, group.Key, mapping, false);
+
+            foreach (int index in group.Value)
+            {
+                IdPair pair = mapping[entities[index].ObjectId];
+                Entity clone = (Entity)tr.GetObject(pair.Value, OpenMode.ForWrite);
+
+                clone.TransformBy(matrix);
+                newHandles[index] = clone.Handle.ToString();
+            }
+        }
+
+        return new List<string>(newHandles);
     }
 
     /// <summary>

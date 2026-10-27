@@ -13,7 +13,7 @@ public enum LogLevel
 
 /// <summary>
 /// Thread-safe append-only file log. Opens and closes per write deliberately:
-/// a cached FileStream in a static field would outlive MCPRELOAD's context
+/// a cached FileStream in a static field would outlive HOTLOAD's context
 /// unload and keep a handle on the file across reloads.
 /// </summary>
 public static class Log

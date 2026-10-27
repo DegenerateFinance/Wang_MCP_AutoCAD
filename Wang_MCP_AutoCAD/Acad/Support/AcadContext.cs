@@ -40,16 +40,20 @@ internal readonly struct AcadContext
     public double MmPerDrawingUnit { get; }
 
     /// <summary>
-    /// Opens the active drawing and resolves its unit factor. Returns false with a ready-made
-    /// failure when there is no drawing, or when INSUNITS is one this server refuses to guess
-    /// at — notably 0 (unitless), where assuming millimetres would make every tool wrong.
+    /// Opens the drawing the current tool call targets and resolves its unit factor. That is
+    /// the document the gateway locked — which may not be the active one when the caller
+    /// passed a "drawing" argument. Returns false with a ready-made failure when there is no
+    /// drawing, or when INSUNITS is one this server refuses to guess at — notably 0
+    /// (unitless), where assuming millimetres would make every tool wrong.
     /// </summary>
     public static bool TryOpen(out AcadContext context, out ToolResult? failure)
     {
         context = default;
         failure = null;
 
-        Document doc = Application.DocumentManager.MdiActiveDocument;
+        // The fallback only matters for code running outside the gateway; every tool call
+        // comes through it with CurrentDocument set.
+        Document? doc = AcadDocumentGateway.CurrentDocument ?? Application.DocumentManager.MdiActiveDocument;
         if (doc is null)
         {
             failure = ToolResult.Fail("No drawing is open in AutoCAD.");
@@ -70,13 +74,18 @@ internal readonly struct AcadContext
     }
 
     /// <summary>
-    /// A response payload pre-seeded with the unit context every geometry tool must echo, so
-    /// a caller can always tell what the numbers it got back are denominated in.
+    /// A response payload pre-seeded with the context every database tool must echo: which
+    /// drawing it acted on, and the units its numbers are denominated in. Naming the drawing
+    /// is what lets a caller notice that a call landed somewhere other than it intended —
+    /// handles are only unique within one drawing.
     /// </summary>
     public JsonObject NewPayload()
     {
         return new JsonObject
         {
+            ["drawing"] = DrawingSelector.GetFileName(Doc.Name),
+            ["drawing_path"] = Doc.Name,
+            ["drawing_is_active"] = ReferenceEquals(Doc, Application.DocumentManager.MdiActiveDocument),
             ["mm_per_drawing_unit"] = MmPerDrawingUnit,
             ["insunits"] = InsUnitsCode,
         };

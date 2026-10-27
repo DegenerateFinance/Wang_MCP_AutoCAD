@@ -23,8 +23,18 @@ public sealed class ToolRegistry
     /// <summary>The number of tools tools/list would currently advertise.</summary>
     public int AdvertisedCount => EnumerateAdvertised().Count();
 
+    /// <summary>
+    /// Registers a tool. Every document tool gets the optional "drawing" argument injected
+    /// here, once, rather than each tool's schema having to remember it — the dispatcher reads
+    /// it for every such tool, so the schema must advertise it for every such tool.
+    /// </summary>
     public void Add(McpTool tool)
     {
+        if (tool.RequiresDocument)
+        {
+            DrawingSelector.AddArgumentTo(tool.InputSchema, tool.IsReadOnly);
+        }
+
         _tools[tool.Name] = tool;
     }
 

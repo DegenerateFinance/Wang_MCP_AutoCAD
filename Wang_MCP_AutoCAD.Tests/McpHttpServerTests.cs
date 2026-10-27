@@ -227,7 +227,7 @@ public class McpHttpServerTests : IDisposable
 
 /// <summary>
 /// Separated from the fixture above because it must own the whole lifecycle: this is the
-/// regression test for the constraint that makes MCPRELOAD work at all.
+/// regression test for the constraint that makes HOTLOAD work at all.
 ///
 /// Production awaits RunAcceptLoopAsync directly inside MCPSTART, so Stop() (called from
 /// MCPSTOP or Terminate — a separate command invocation) is what has to reliably unblock
@@ -258,7 +258,7 @@ public class McpHttpServerShutdownTests
     public async Task Stop_UnblocksTheAcceptLoopAndFreesThePort()
     {
         // The load-bearing test. An accept loop that outlives Stop() pins the collectible
-        // AssemblyLoadContext, and every MCPRELOAD then leaks a context plus the port.
+        // AssemblyLoadContext, and every HOTLOAD then leaks a context plus the port.
         int port = FreePort();
         McpHttpServer server = Build(port);
         Assert.True(server.TryStart(out string error), error);

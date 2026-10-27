@@ -8,8 +8,9 @@
 
     <!-- AutoCAD's CLR loads NETLOAD'ed assemblies into AssemblyLoadContext.Default,
          which refuses to load a second assembly with the same simple name (regardless
-         of version) and can never unload one. The Loader is meant to change rarely,
+         of version) and can never unload one. The hot loader is meant to change rarely,
          so it still needs the timestamp-per-build trick in deploy.ps1 when it does. -->
+    <RootNamespace>AcadHotLoader</RootNamespace>
     <Deterministic>false</Deterministic>
     <AssemblyVersion>1.0.*</AssemblyVersion>
   </PropertyGroup>
@@ -39,7 +40,7 @@
     <PropertyGroup>
       <_WangMcpDeployDirArg Condition="'$(WangMcpDeployDir)' != ''">-TargetDir "$(WangMcpDeployDir)"</_WangMcpDeployDirArg>
     </PropertyGroup>
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\deploy.ps1&quot; -Config $(Configuration) -Project Loader $(_WangMcpDeployDirArg)" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\deploy.ps1&quot; -Config $(Configuration) -Project HotLoader $(_WangMcpDeployDirArg)" />
   </Target>
 
 </Project>

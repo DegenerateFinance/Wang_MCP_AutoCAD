@@ -268,6 +268,38 @@ public sealed class ToolSchema
         return this;
     }
 
+    /// <summary>
+    /// A map whose values may be strings or numbers, for dynamic block properties: a
+    /// visibility state is a string, a distance parameter a number.
+    /// </summary>
+    public ToolSchema ValueMap(string name, string description, bool required = false)
+    {
+        JsonObject property = new()
+        {
+            ["type"] = "object",
+            ["description"] = description,
+            ["additionalProperties"] = new JsonObject { ["type"] = new JsonArray { "string", "number" } },
+        };
+
+        return Property(name, property, required);
+    }
+
+    /// <summary>
+    /// A property whose schema the caller built itself — for structured items like attribute
+    /// definitions, where the item schema lives next to the code that reads it.
+    /// </summary>
+    public ToolSchema Property(string name, JsonObject schema, bool required = false)
+    {
+        _properties[name] = schema;
+
+        if (required)
+        {
+            _required.Add(name);
+        }
+
+        return this;
+    }
+
     public JsonObject Build()
     {
         return new JsonObject

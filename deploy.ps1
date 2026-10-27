@@ -1,13 +1,19 @@
 param(
     [string]$Config = "Debug",
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Loader", "Plugin")]
+    [ValidateSet("HotLoader", "Plugin")]
     [string]$Project,
     # Passed by the csproj from $(WangMcpDeployDir), which comes from the gitignored
     # deploy.local.props. Kept out of source control so no machine-specific path is
     # committed - see deploy.local.props.example.
     [string]$TargetDir
 )
+
+# Without this, Copy-Item's "file is being used by another process" is a NON-terminating
+# error: the script carried on, printed "Copied ..." and exited 0, so the build reported
+# success while the deploy folder still held the old DLL. Stop makes a failed copy fail the
+# build, which is what the "trust the build" rule in AGENTS.md relies on.
+$ErrorActionPreference = "Stop"
 
 # Precedence: -TargetDir (deploy.local.props) -> $env:WANG_MCP_DEPLOY_DIR -> fallback.
 # The env var wins over nothing here but is the easier lever on the AutoCAD machine,
@@ -24,34 +30,34 @@ if ([string]::IsNullOrWhiteSpace($TargetDir)) {
 New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
 
 $ProjectDirs = @{
-    Loader = "Wang_MCP_AutoCAD.Loader"
-    Plugin = "Wang_MCP_AutoCAD"
+    HotLoader = "AcadHotLoader"
+    Plugin    = "Wang_MCP_AutoCAD"
 }
 $AssemblyNames = @{
-    Loader = "Wang_MCP_AutoCAD.Loader"
-    Plugin = "Wang_MCP_AutoCAD"
+    HotLoader = "AcadHotLoader"
+    Plugin    = "Wang_MCP_AutoCAD"
 }
 
 $AssemblyName = $AssemblyNames[$Project]
 $SourceDir = "$PSScriptRoot\$($ProjectDirs[$Project])\bin\$Config\net8.0-windows"
 
-if ($Project -eq "Loader") {
+if ($Project -eq "HotLoader") {
     # AutoCAD's CLR never unloads a NETLOAD'ed assembly, so re-loading the same
     # file name is a no-op (in fact it errors: "Assembly with same name is
     # already loaded" - the collision is on the assembly's simple name, not the
     # file path). Stamp each build with a timestamp so a NETLOAD after rebuilding
-    # the Loader still picks up a genuinely new assembly without restarting
-    # AutoCAD. The Loader is meant to change rarely - this is only for that case.
+    # the hot loader still picks up a genuinely new assembly without restarting
+    # AutoCAD. It is meant to change rarely - this is only for that case.
     $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $TargetName = "$AssemblyName`_$Stamp"
 
     Get-ChildItem "$TargetDir\$AssemblyName*.dll", "$TargetDir\$AssemblyName*.pdb" -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
 } else {
-    # The Plugin is never NETLOAD'ed by the Loader (it's read from disk into a
-    # fresh collectible AssemblyLoadContext on every MCPRELOAD), so there's no
+    # The Plugin is never NETLOAD'ed in the dev loop (AcadHotLoader reads it from
+    # disk into a fresh collectible AssemblyLoadContext on every HOTLOAD), so there's no
     # "already loaded" identity to collide with and no reason to stamp the name.
-    # Overwriting one fixed file also keeps this folder clean: MCPRELOAD's file
+    # Overwriting one fixed file also keeps this folder clean: HOTLOAD's file
     # picker opens here, so timestamped copies would pile up for you to pick the
     # newest out of on every reload.
     $TargetName = $AssemblyName
