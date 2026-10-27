@@ -34,8 +34,7 @@ HOTRUN    -> MCPSTART
 Then `HOTRUN` → `MCPLOG` and set the level to **Debug**. Log:
 `%LOCALAPPDATA%\Wang_MCP_AutoCAD\mcp.log`. Quote from it for any failure.
 
-Set the drawing to **`INSUNITS` = 4 (millimetres)** for rounds 1–4, so mm and drawing units
-are 1:1 and a wrong number is obvious by eye. Round 5 changes it deliberately.
+Use a millimetre drawing.
 
 Use `curl.exe`, not `curl` — in PowerShell the bare name is an alias for `Invoke-WebRequest`.
 Endpoint is `http://127.0.0.1:5599/mcp`.
@@ -171,24 +170,8 @@ curl.exe -s -X POST http://127.0.0.1:5599/mcp -H "Content-Type: application/json
 **Response:** `isError: true`, naming the handle and its type (`CIRCLE`), and mentioning that
 the tool works on TEXT, MTEXT and ATTRIB.
 
-→ **Ask the user to confirm** before round 5.
-
----
-
-## Round 5 — units
-
-The mm/du split is the most likely thing to be silently wrong.
-
-1. Still at `INSUNITS` = 4, add text with `mm_height: 25`. Measure it in AutoCAD: cap height
-   **25 drawing units**, `mm_per_drawing_unit` = `1`.
-2. Set `INSUNITS` to **6 (metres)**. Add text with `mm_height: 25` again at a clear spot.
-   Response: `mm_per_drawing_unit` = `1000`.
-3. **Measure both.** They must be the **same physical size** on screen. If the second is
-   1000× bigger or smaller, the conversion is inverted — the most valuable bug here.
-4. Set `INSUNITS` to **0 (unitless)**. Any text call must return a clean `isError: true`
-   naming `INSUNITS`, **not** silently assume millimetres.
-
-→ **Ask the user to confirm the two heights match** before round 6.
+→ **Ask the user to confirm** before round 6. (Round 5, units, was dropped: only mm drawings
+are in scope.)
 
 ---
 

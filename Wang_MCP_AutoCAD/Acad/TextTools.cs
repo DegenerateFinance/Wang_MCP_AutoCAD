@@ -166,7 +166,13 @@ internal static class TextTools
 
                 dbText.TextStyleId = styleId;
                 dbText.TextString = text;
-                dbText.Height = acad.ToDu(mm_Height);
+
+                // A style with a non-zero TextSize has a fixed height, but only AutoCAD's UI
+                // enforces it (the TEXT command, or picking the style in Properties). Setting
+                // TextStyleId through the API keeps whatever Height is given — Phase 2 live:
+                // mm_height 50 on a 10-high style drew 50 high. So apply it here, as the UI would.
+                heightOverridden = du_StyleHeight > 0;
+                dbText.Height = heightOverridden ? du_StyleHeight : acad.ToDu(mm_Height);
                 dbText.Rotation = Units.DegToRad(deg_Rotation);
 
                 if (hasWidthFactor)
@@ -185,10 +191,6 @@ internal static class TextTools
                 // Only once the text is database-resident; see ApplyJustification.
                 AdjustIfJustified(dbText, acad.Db);
 
-                // A style with a non-zero TextSize forces its own height and silently discards
-                // the one just set; report that rather than letting the caller believe mm_height
-                // took effect.
-                heightOverridden = du_StyleHeight > 0;
                 mm_ActualHeight = acad.ToMm(dbText.Height);
 
                 handle = dbText.Handle.ToString();

@@ -311,22 +311,7 @@ Then convert and redefine:
 3. `acad_get_dynamic_block_properties` on `<DOOR>` → now reported under `failures` ("not a
    dynamic block reference").
 
-→ **Ask the user to confirm** before round 8.
-
----
-
-## Round 8 — units (also covers the skipped Phase 3 round 6)
-
-Only mm drawings have been exercised so far, in any phase.
-
-1. Set `INSUNITS` = **6 (metres)**.
-2. `acad_insert_block` P4_BOX at `mm_position` (2000, 3000), `attributes` `{"TAG":"UNITS"}`.
-   **Response:** `mm_per_drawing_unit` = 1000. **`LIST`** the new reference: insertion point
-   **(2, 3)** drawing units. At (2000, 3000) → the position was not converted.
-3. `acad_get_entity_properties` on it → `mm_position` = `[2000,3000,0]` (the round trip).
-4. While still in metres, run **Phase 3 round 6** from `PHASE3_TRANSFORMS.md` (move/copy a line
-   by mm and confirm drawing-unit results), and its round 4b (mirror without `copy`).
-5. Set `INSUNITS` back to **4**.
+→ **Ask the user to confirm.**
 
 ---
 

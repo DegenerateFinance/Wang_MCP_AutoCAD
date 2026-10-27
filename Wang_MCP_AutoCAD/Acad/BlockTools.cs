@@ -1781,6 +1781,12 @@ internal static class BlockTools
 
         try
         {
+            // Two transactions on purpose. ConvertToStaticBlock writes the block table and the
+            // block records itself; anything this call still holds open ForRead — the block
+            // table from the name check, the definitions GetEffectiveName reads — makes it
+            // fail with eWasOpenForRead (Phase 4 live). So check first, close everything, then
+            // convert with only the reference open.
+            ObjectId referenceId;
             using (Transaction tr = acad.Db.TransactionManager.StartTransaction())
             {
                 BlockTable blockTable = (BlockTable)tr.GetObject(acad.Db.BlockTableId, OpenMode.ForRead);
@@ -1789,7 +1795,7 @@ internal static class BlockTools
                     return ToolResult.Fail($"Block \"{newBlockName}\" already exists. Choose another name.");
                 }
 
-                if (!TryResolveReferences(tr, acad, new[] { handle }, OpenMode.ForWrite, out List<BlockReference> references, out error))
+                if (!TryResolveReferences(tr, acad, new[] { handle }, OpenMode.ForRead, out List<BlockReference> references, out error))
                 {
                     return ToolResult.Fail(error);
                 }
@@ -1801,6 +1807,14 @@ internal static class BlockTools
                 }
 
                 previousName = BlockSupport.GetEffectiveName(tr, reference);
+                referenceId = reference.ObjectId;
+
+                tr.Commit();
+            }
+
+            using (Transaction tr = acad.Db.TransactionManager.StartTransaction())
+            {
+                BlockReference reference = (BlockReference)tr.GetObject(referenceId, OpenMode.ForWrite);
                 reference.ConvertToStaticBlock(newBlockName);
 
                 tr.Commit();

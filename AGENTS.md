@@ -46,7 +46,7 @@ Concise and runnable, not a design document. Per round:
 - **What the tester should expect to SEE in AutoCAD**, in one or two lines, phrased so a wrong result is obvious ("text centred *on* the point, not starting at it"; "at the origin instead would mean the AlignmentPoint trap fired").
 - Then **stop and wait for the user's visual confirmation** before the next round.
 
-Rinse and repeat: one small round, response check, visual confirmation, next round. Order rounds so an early failure explains the later ones, and put the checks that can only fail live — unit conversion, angle conventions, text alignment — before the ones the unit tests already cover.
+Rinse and repeat: one small round, response check, visual confirmation, next round. Order rounds so an early failure explains the later ones, and put the checks that can only fail live — angle conventions, text alignment — before the ones the unit tests already cover.
 
 Keep these briefs in `tests/live/`, one per phase. Say plainly which checks have never been run against a real AutoCAD; a clean pass on everything first time is a suspicious outcome worth double-checking, not a result to celebrate.
 
@@ -59,7 +59,7 @@ Keep these briefs in `tests/live/`, one per phase. Say plainly which checks have
 - **Long signatures** — when a method has more than 4 parameters, put each parameter on its own line. At the call site, use named arguments (`paramName: value,`) each on its own line.
 - Private fields: `_camelCase`. Public members: `PascalCase`.
 - **Time-valued members must carry their unit as a prefix on the unit part of the name** — `Ms_RequestTimeout`, `Sec_ListenerShutdown`, `Microsec_Elapsed`. Never a bare `Timeout` or `Elapsed`.
-- **All measurement members must carry their unit in the name** — `Mm_Width`, `Deg_Rotation`, `Kg_Weight`. AutoCAD-specific wrinkle: geometry read from the database is in *drawing units*, which are not implicitly millimetres. Name an unconverted database value `Du_Radius`, and only use `Mm_` once an explicit conversion has happened. Endpoint payloads must state their unit for the same reason.
+- **All measurement members must carry their unit in the name** — `Mm_Width`, `Deg_Rotation`, `Kg_Weight`. Endpoint payloads must state their unit too.
 - **Always use `Stopwatch` to measure elapsed time** — never `DateTime.Now`/`DateTimeOffset.Now` subtraction. `Stopwatch.StartNew()` before the operation, `sw.Stop()` after, then `sw.ElapsedMilliseconds` or `sw.Elapsed.TotalMicroseconds`. `DateTime` is only correct for wall-clock *timestamps* — e.g. the timestamp `Log.Write` stamps on each line, which is compliant and should not be "fixed" to `Stopwatch`.
 
 ### Error handling

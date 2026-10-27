@@ -6,8 +6,8 @@ independently buildable, testable and demoable.
 Full reasoning, per-tool schemas and the API verification behind all of this live in the plan
 at `~/.claude/plans/now-that-we-have-noble-quail.md`.
 
-**Status:** Phases 0–4 complete, 31 tools. Live-verified: 3 and 3b. Not yet live-verified:
-2 (no results file), 4, and unit conversion in any phase (Phase 4 brief round 8 covers it).
+**Status:** Phases 0–4 complete, 31 tools. Live-verified: 2, 3, 3b and 4. Not yet
+live-verified: 1 (no brief).
 Tests: 85 → 493. Live briefs live in `tests/live/`, results in `tests/results/`; and are copied to the deploy
 folder by `tests/deploy-briefs.ps1`.
 
@@ -120,7 +120,7 @@ not from documentation.
 
 ---
 
-## Phase 3 — transforms and copy ✅ DONE (live-verified except units and attributed copy)
+## Phase 3 — transforms and copy ✅ DONE (live-verified except attributed copy)
 
 - [x] `acad_transform` — `mode` = move / rotate / scale / mirror, plus `copy`
   - `Matrix3d.Rotation` needs `Vector3d.ZAxis`; the WCS X axis silently rotates out of plane
@@ -184,7 +184,7 @@ not from documentation.
 
 ---
 
-## Phase 4 — blocks ✅ DONE (not live-verified — `tests/live/PHASE4_BLOCKS.md`)
+## Phase 4 — blocks ✅ DONE (live-verified, Retest 2 in `tests/results/PHASE4_BLOCKS_RESULTS.md`; justified attribute definitions still fail)
 
 All 11 tools in `Acad/BlockTools.cs`, plumbing in `Acad/Support/BlockSupport.cs`, every
 decision that does not need AutoCAD in `Mcp/` (`BlockRules`, `AttributeSpecReader`,
@@ -255,24 +255,23 @@ decision that does not need AutoCAD in `Mcp/` (`BlockRules`, `AttributeSpecReade
       warning is backwards now `deploy.local.props` points there, and that three tools is now
       17. Sections 5.1–5.4 and 5.7 still stand.
 - [ ] Add **round-trip checks** per phase: create with tool X, read back with
-      `acad_get_entity_properties`, assert every value matches. Catches unit and angle bugs
+      `acad_get_entity_properties`, assert every value matches. Catches angle bugs
       mechanically instead of by eye
-- [ ] Phase 2 angle check: draw an arc at 0°/90°, confirm `LIST` reports 0 and 90 — not 0 and
-      5156, which is what a missing radian conversion gives
-- [ ] **Phase 2 justification check** (the one thing metadata cannot settle): add text at a
-      known point with `justify: "middle_center"`, then confirm it is *centred on that point*
-      rather than sitting at the origin. That is the `AlignmentPoint` trap actually firing or
-      not; the unit tests only prove the mapping, not AutoCAD's response to it.
-- [ ] Phase 2 style check: add text on a style with a fixed `TextSize` and confirm
-      `height_overridden_by_style` comes back true and the text really does ignore `mm_height`
+- [x] Phase 2 angle check — arc 0°→90° reads back 0 and 90 (`PHASE2_TEXT_RESULTS.md`)
+- [x] **Phase 2 justification check** — `middle_center`/`top_right` are stored correctly; the
+      view did not repaint them in place (display only)
+- [x] Phase 2 style check — found that AutoCAD does NOT apply a style's fixed height to
+      API-created text; `acad_add_text` now applies it itself. Verified live after the fix
 - [ ] Phase 2 attribute check: `acad_set_text_content` against a **multiline** attribute, and
       confirm the displayed value updates (this is what `UpdateMTextAttribute()` is for — a
       single-line attribute would pass even if that call were missing)
-- [ ] **The Phase 4 acceptance test**: create an attributed block, insert three references,
-      set different values on each, redefine adding a second attribute, then confirm all three
-      show both attributes *with their original values intact*
-- [ ] First Phase 4 live check: does a redefinition repaint existing references without an
-      explicit `Editor.Regen()` / `QueueForGraphicsFlush()`? Not knowable from metadata
+- [x] **The Phase 4 acceptance test** — passed live (Retest 2): five references kept their own
+      values through a redefine that added a second attribute
+- [x] First Phase 4 live check: redefined references repainted without a manual `REGEN`
+- [ ] Justified attribute definitions in `acad_create_block`/`acad_redefine_block` fail
+      `eInvalidContext` in `DBText.AdjustAlignment`; left-justified pass (Retest 2, failure 2)
+- [ ] `acad_get_dynamic_block_properties` still treats a reference as dynamic after
+      `acad_convert_block_to_static` (Retest 2, round 7)
 - [ ] `acad_create_layer` is the canary for whether `LockDocument()` alone suffices for
       symbol-table writes — everything so far only appends to model space
 
